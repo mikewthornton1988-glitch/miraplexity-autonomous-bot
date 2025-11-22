@@ -32,7 +32,7 @@ def get_players_for_tournament(tourney_id):
 
 def update_winner_stats(player):
     new_xp = player["xp"] + 10
-    new_level = player["level"] + (1 if new_xp >= 100 else 0)
+    new_level = 1 + (new_xp // 100)
     new_skill = player["skill_rating"] + 5
 
     supabase.table("players").update({
@@ -46,6 +46,10 @@ def update_winner_stats(player):
 
 async def auto_update_leaderboard(tournament_name, chat_id, app):
     tourney = get_tournament_by_name(tournament_name)
+    if not tourney:
+        await app.bot.send_message(chat_id=chat_id, text=f"Tournament '{tournament_name}' not found.")
+        return
+    
     players = supabase.table("players").select("*") \
         .eq("tournament_id", tourney["id"]) \
         .order("skill_rating", desc=True).execute().data
@@ -118,12 +122,22 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /join <TournamentName>")
         return
 
-    username = update.effective_user.first_name
+    username = update.effective_user.first_name or update.effective_user.username or f"User{update.effective_user.id}"
     tournament_name = " ".join(context.args)
 
     tourney = get_tournament_by_name(tournament_name)
     if not tourney:
-        await update.message.reply_text("Tournament not found.")
+        await update.message.reply_text(f"Tournament '{tournament_name}' not found.")
+        return
+
+    # Check if player already joined this tournament
+    user_id = update.effective_user.id
+    existing = supabase.table("players").select("*") \
+        .eq("tournament_id", tourney["id"]) \
+        .eq("username", username).execute().data
+    
+    if existing:
+        await update.message.reply_text(f"You've already joined {tournament_name}!")
         return
 
     supabase.table("players").insert({
@@ -158,6 +172,10 @@ async def payouts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     tournament_name = " ".join(context.args)
     tourney = get_tournament_by_name(tournament_name)
+    if not tourney:
+        await update.message.reply_text(f"Tournament '{tournament_name}' not found.")
+        return
+    
     players = supabase.table("players").select("*") \
         .eq("tournament_id", tourney["id"]).order("skill_rating", desc=True).execute().data
 
